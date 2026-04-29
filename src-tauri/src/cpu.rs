@@ -23,6 +23,13 @@ impl CPU{
         self.regs[reg]
     }
 
+    fn run_program(&mut self){
+        while self.pc < self.ram.len() as u32{
+            let fetched = self.fetch();
+            self.decode(fetched);
+        }
+    }
+
     fn fetch(&self) -> u32{
          let index = self.pc as usize;
          return (self.ram[index] as u32) 
@@ -57,6 +64,7 @@ impl CPU{
                 panic!("Unknown opcode:{:#09b}", opcode);
             }
         }
+        self.pc += 4
     }
 
     fn execute_alu(&mut self, rd: usize,  funct3: u32, rs1_data: u32, rs2_data: u32, funct7: u32){
@@ -140,6 +148,72 @@ mod cpu_tests{
         risc_v.decode(fetched);
         
         assert_eq!(risc_v.read_register(1), 5);
+    }
+
+    #[test]
+    fn run_two_instructions(){
+        let instruction: Vec<u8> = [0x93, 0x00, 0x50, 0x00, 0x13, 0x03, 0x90, 0x01].to_vec(); //addi x1, x0, 5, addi x6, x0, 25
+        let mut risc_v = CPU::new(instruction);
+        risc_v.run_program();
+        
+        assert_eq!(risc_v.read_register(1), 5);
+        assert_eq!(risc_v.read_register(6), 25);
+    }
+
+    #[test]
+    fn adding_registers_with_rtype_instructions(){
+        let instruction: Vec<u8> = [0x93, 0x00, 0x50, 0x00, //addi x1, x0, 5, 
+                                    0x13, 0x03, 0x90, 0x01, //addi x6, x0, 25
+                                    0xb3, 0x81, 0x60, 0x00  //add x3, x1, x6
+                                    ].to_vec(); 
+        let mut risc_v = CPU::new(instruction);
+        risc_v.run_program();
+        assert_eq!(risc_v.read_register(3), 30)
+    }
+
+    #[test]
+    fn testing_alu_functionality(){
+        let instructions: Vec<u8> = vec![
+            // Setup: addi x1, x0, 15   (x1 = 15 = 0b00001111)
+            0x93, 0x00, 0xF0, 0x00,
+            // Setup: addi x2, x0, 3    (x2 = 3  = 0b00000011)
+            0x13, 0x01, 0x30, 0x00,
+            
+            // ADD  x3, x1, x2  → 15 + 3  = 18
+            0xB3, 0x81, 0x20, 0x00,
+            // SUB  x3, x1, x2  → 15 - 3  = 12
+            0xB3, 0x81, 0x20, 0x40,
+            // SLL  x3, x1, x2  → 15 << 3 = 120
+            0xB3, 0x91, 0x20, 0x00,
+            // SLT  x3, x1, x2  → 15 < 3  = 0
+            0xB3, 0xA1, 0x20, 0x00,
+            // SLTU x3, x1, x2  → 15 < 3  = 0
+            0xB3, 0xB1, 0x20, 0x00,
+            // XOR  x3, x1, x2  → 15 ^ 3  = 12
+            0xB3, 0xC1, 0x20, 0x00,
+            // SRL  x3, x1, x2  → 15 >> 3 = 1
+            0xB3, 0xD1, 0x20, 0x00,
+            // SRA  x3, x1, x2  → 15 >> 3 = 1 (arithmetic)
+            0xB3, 0xD1, 0x20, 0x40,
+            // OR   x3, x1, x2  → 15 | 3  = 15
+            0xB3, 0xE1, 0x20, 0x00,
+            // AND  x3, x1, x2  → 15 & 3  = 3
+            0xB3, 0xF1, 0x20, 0x00
+        ];
+
+        let result:Vec<u32> = vec![
+            //EMPTY. EMPTY, ADD, SUB, SLL, SLT, SLTU, XOR, SLR, SRA, OR, AND
+            0, 0, 18, 12, 120, 0, 0, 12, 1, 1, 15, 3
+        ];
+
+        let mut risc_v = CPU::new(instructions);
+
+        for r in result.iter(){
+            let fetched = risc_v.fetch();
+            risc_v.decode(fetched);
+        
+            assert_eq!(&risc_v.read_register(3), r);
+        }
     }
 }
 
